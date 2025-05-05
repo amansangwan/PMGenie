@@ -1,0 +1,12 @@
+openai
+fastapi
+uvicorn
+python-dotenv
+jira
+weasyprint
+jinja2
+chromadb
+sentence-transformers
+pydantic
+chromadb
+sentence-transformers

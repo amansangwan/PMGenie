@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Daily Standup Report</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 40px;
+            padding: 0;
+            color: #333;
+        }
+        h1, h2 {
+            color: #005b99;
+            border-bottom: 2px solid #eee;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .metrics {
+            display: flex;
+            justify-content: space-between;
+        }
+        .metric {
+            background: #f0f4f8;
+            border-radius: 8px;
+            padding: 10px 15px;
+            width: 30%;
+            box-shadow: 1px 1px 5px rgba(0,0,0,0.05);
+        }
+        .blockers {
+            background-color: #ffe6e6;
+            border: 1px solid #ff4d4d;
+            padding: 15px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>📋 Daily Standup Report</h1>
+    <p><strong>Date:</strong> {{ date }}</p>
+    <p><strong>Project:</strong> {{ project }}</p>
+
+    <div class="section">
+        <h2>Summary</h2>
+        <p>{{ summary }}</p>
+    </div>
+
+    <div class="section">
+        <h2>Metrics</h2>
+        <div class="metrics">
+            <div class="metric">
+                <strong>Total Tasks:</strong>
+                <p>{{ total_tasks }}</p>
+            </div>
+            <div class="metric">
+                <strong>Completed:</strong>
+                <p>{{ completed_tasks }}</p>
+            </div>
+            <div class="metric">
+                <strong>Pending:</strong>
+                <p>{{ pending_tasks }}</p>
+            </div>
+        </div>
+    </div>
+
+    {% if blockers %}
+    <div class="section">
+        <h2>🚧 Blockers</h2>
+        <div class="blockers">
+            <ul>
+            {% for blocker in blockers %}
+                <li>{{ blocker }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+</body>
+</html>
