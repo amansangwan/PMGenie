@@ -23,7 +23,6 @@ CONTEXT = {"project_name": None, "pending_query": None}
 def extract_project_name(query):
     system_prompt = "You are an assistant. Extract the project name from the user input. Return only the project name. For eg. 'summarize sathi project' then return 'sathi'. If not found, return 'unknown'."
     try:
-        start_time_model = time.perf_counter()
 
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -33,14 +32,12 @@ def extract_project_name(query):
             ],
             temperature=0
         )
-        elapsed_time_model = time.perf_counter() - start_time_model
-        print(f"[TIMING] elapsed_time_model total: {elapsed_time_model:.3f}s")
+
         return response.choices[0].message.content.strip()
     except Exception:
         return "unknown"
 
 def ai_reasoning_engine(user_query):
-    start_time = time.perf_counter()
     """
     AI reasoning engine that follows START, PLAN, ACTION, OBSERVATION, and OUTPUT states dynamically.
     :param user_query: User's request (e.g., "Summarize Jira updates for Sarthi project")
@@ -87,15 +84,12 @@ def ai_reasoning_engine(user_query):
 
         while(True):
         # Step 3: Get AI Plan (Determine required tool(s))
-            start_time_model = time.perf_counter()
             plan_response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=messages,
                 response_format={"type":"json_object"},
                 temperature=0.2
             )
-            elapsed_time_model = time.perf_counter() - start_time_model
-            print(f"[TIMING] elapsed_time_inside_model total: {elapsed_time_model:.3f}s")
             plan_text = plan_response.choices[0].message.content
             messages.append({'role': 'assistant', 'content': plan_text})
             call = json.loads(plan_text)
@@ -108,8 +102,7 @@ def ai_reasoning_engine(user_query):
                     session_id=SESSION_ID,
                     tags="jira_summary"
                 )
-                elapsed = time.perf_counter() - start_time
-                print(f"[TIMING] ai_reasoning_engine total: {elapsed:.3f}s")
+
                 return call['output']
                 # print('🤖', call['output'])
                 # break
@@ -122,10 +115,9 @@ def ai_reasoning_engine(user_query):
                 #     # If no input is needed (like getProjects or getCurrentDate), just call the function
                 #     observation = fn()
                 if(TOOLS[call['function']]['needs_input']):
-                    start_time_tool = time.perf_counter()
+
                     observation = fn(call['input'])
-                    elapsed_time = time.perf_counter() - start_time_tool
-                    print(f"[TIMING] elapsed_tool_time total: {elapsed_time:.3f}s")
+
                 else:
                     observation = fn()
                 obs = {'type':'observation', "observation":observation}

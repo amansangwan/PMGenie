@@ -39,6 +39,8 @@ Use these to improve your planning, tool selection, and summaries, especially if
 Return the output in best way possible for the end user readibility.
 
 Strictly follow the json output format in examples
+Always respond ONLY in valid JSON format with double quotes. Do not include commentary or markdown.
+
 
 You have access to the following tools:
 1. function getJiraIssues(project_name)** → Fetches Jira issues for a project in json format .

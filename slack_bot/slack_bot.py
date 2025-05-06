@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from flask import Flask, request, jsonify
 from slack_sdk.web import WebClient
 from slack_sdk.signature import SignatureVerifier
-from ai_engine import ai_reasoning_engine
+from ai_reasoning_engine.ai_engine import ai_reasoning_engine
 
 load_dotenv("creds.env")
 

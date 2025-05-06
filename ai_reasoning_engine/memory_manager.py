@@ -1,74 +1,93 @@
-# memory_manager/memory_manager.py
-
-from chromadb import Client
-from chromadb.config import Settings
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
 from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
+import os
 import uuid
 import datetime
 
+load_dotenv("creds.env")
+
 class MemoryManager:
-    def __init__(self, persist_directory="./vector_db"):
-        self.client = Client(Settings(persist_directory=persist_directory))
-        self.collection = self.client.get_or_create_collection(name="ai_memory")
+    def __init__(self, collection_name="ai_memory"):
+        self.collection_name = collection_name
         self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
-    def add_memory(self, user_input, ai_response, project_name=None, session_id=None, tags=None):
-        """
-        Save AI memory with rich metadata for future retrieval
-        """
-        text = f"User: {user_input}\nAI: {ai_response}"
-        embedding = self.embedder.encode([text])[0].tolist()
+        self.qdrant_url = os.getenv("QDRANT_URL")
+        self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
 
-        metadata = {
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-
-        if project_name:
-            metadata["project"] = project_name
-        if session_id:
-            metadata["session_id"] = session_id
-        if tags:
-            metadata["tags"] = tags  # List of strings, e.g., ['summary', 'jira']
-
-        self.collection.add(
-            documents=[text],
-            embeddings=[embedding],
-            metadatas=[metadata],
-            ids=[str(uuid.uuid4())]
+        self.client = QdrantClient(
+            url=self.qdrant_url,
+            api_key=self.qdrant_api_key,
         )
 
-    def query_memory(self, query_text, top_k=1, project_name=None, session_id=None, tags=None):
-        """
-        Retrieve relevant memories based on input and metadata filters
-        """
-        embedding = self.embedder.encode([query_text])[0].tolist()
+        self._init_collection()
 
-        metadata_filter = {}
-        if project_name:
-            metadata_filter["project"] = project_name
-        if session_id:
-            metadata_filter["session_id"] = session_id
-        if tags:
-            metadata_filter["tags"] = tags
+    def _init_collection(self):
+        existing_collections = [c.name for c in self.client.get_collections().collections]
 
-        query_args = {
-            "query_embeddings": [embedding],
-            "n_results": top_k
+        if self.collection_name not in existing_collections:
+            self.client.recreate_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+            )
+
+        # Ensure required payload indexes exist for filtering
+        for field in ["project", "session_id", "tags"]:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema="keyword"
+                )
+            except Exception as e:
+                # Avoid raising error if index already exists
+                if "already exists" not in str(e):
+                    raise
+
+    def add_memory(self, user_input, ai_response, project_name=None, session_id=None, tags=None):
+        text = f"User: {user_input}\nAI: {ai_response}"
+        embedding = self.embedder.encode([text])[0]
+
+        payload = {
+            "text": text,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "project": project_name,
+            "session_id": session_id,
+            "tags": tags or []
         }
 
-        if metadata_filter:
-            if len(metadata_filter) == 1:
-                # Single field: safe to pass directly
-                query_args["where"] = metadata_filter
-            else:
-                # Multiple fields: combine under $and
-                # e.g. { "$and": [ {"project": "X"}, {"session_id": "Y"} ] }
-                query_args["where"] = {
-                    "$and": [{k: v} for k, v in metadata_filter.items()]
-                }
+        self.client.upsert(
+            collection_name=self.collection_name,
+            points=[{
+                "id": str(uuid.uuid4()),
+                "vector": embedding,
+                "payload": payload
+            }]
+        )
 
-        results = self.collection.query(**query_args)
-        return results["documents"]
+    def query_memory(self, query_text, top_k=3, project_name=None, session_id=None, tags=None):
+        embedding = self.embedder.encode([query_text])[0]
+
+        conditions = []
+        if project_name:
+            conditions.append(FieldCondition(key="project", match=MatchValue(value=project_name)))
+        if session_id:
+            conditions.append(FieldCondition(key="session_id", match=MatchValue(value=session_id)))
+        if tags:
+            conditions.append(FieldCondition(key="tags", match=MatchValue(value=tags)))
+
+        query_filter = Filter(must=conditions) if conditions else None
+
+        hits = self.client.search(
+            collection_name=self.collection_name,
+            query_vector=embedding,
+            limit=top_k,
+            query_filter=query_filter
+        )
+
+        return [hit.payload["text"] for hit in hits]
 
     def clear_memory(self):
-        self.collection.delete()
+        self.client.delete_collection(self.collection_name)
+        self._init_collection()
