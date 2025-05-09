@@ -1,7 +1,7 @@
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
-from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
+import openai
 import os
 import uuid
 import datetime
@@ -11,11 +11,13 @@ load_dotenv("creds.env")
 class MemoryManager:
     def __init__(self, collection_name="ai_memory"):
         self.collection_name = collection_name
-        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
+        # Load credentials
+        openai.api_key = os.getenv("OPENAI_API_KEY")
         self.qdrant_url = os.getenv("QDRANT_URL")
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
 
+        # Qdrant client
         self.client = QdrantClient(
             url=self.qdrant_url,
             api_key=self.qdrant_api_key,
@@ -29,7 +31,7 @@ class MemoryManager:
         if self.collection_name not in existing_collections:
             self.client.recreate_collection(
                 collection_name=self.collection_name,
-                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+                vectors_config=VectorParams(size=1536, distance=Distance.COSINE)  # OpenAI vector size
             )
 
         # Ensure required payload indexes exist for filtering
@@ -41,13 +43,19 @@ class MemoryManager:
                     field_schema="keyword"
                 )
             except Exception as e:
-                # Avoid raising error if index already exists
                 if "already exists" not in str(e):
                     raise
 
+    def get_embedding(self, text):
+        response = openai.embeddings.create(
+            model="text-embedding-3-small",
+            input=text
+        )
+        return response.data[0].embedding
+
     def add_memory(self, user_input, ai_response, project_name=None, session_id=None, tags=None):
         text = f"User: {user_input}\nAI: {ai_response}"
-        embedding = self.embedder.encode([text])[0]
+        embedding = self.get_embedding(text)
 
         payload = {
             "text": text,
@@ -67,7 +75,7 @@ class MemoryManager:
         )
 
     def query_memory(self, query_text, top_k=3, project_name=None, session_id=None, tags=None):
-        embedding = self.embedder.encode([query_text])[0]
+        embedding = self.get_embedding(query_text)
 
         conditions = []
         if project_name:
