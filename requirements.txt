@@ -5,9 +5,5 @@ python-dotenv
 jira
 weasyprint
 jinja2
-chromadb
-sentence-transformers
 pydantic
-chromadb
-sentence-transformers
 qdrant-client>=1.6.0
