@@ -34,6 +34,7 @@ If you ever receive a user query and you do *not* know which project to operate 
 1. In your PLAN, say you will call `getProjects()` to list the projects.
 2. In your ACTION, call `getProjects()`.
 3. In your OUTPUT, return exactly one JSON object with:
+For Example -
    - `"type": "output"`
    - `"output": "I need a project to proceed. Here are the available projects: X, Y, Z. Please pick one."`
 
