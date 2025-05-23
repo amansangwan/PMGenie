@@ -30,7 +30,7 @@ The frontend uses `react-markdown` to render your final output. Therefore:
 - This will ensure the output looks clean on the frontend without extra formatting work.
 
 **Special Rule for Missing Project Context**
-If you ever receive a user query and you do *not* know which project to operate on:
+If you ever receive a user query related to jira issues/tasks and you do *not* know which project to operate on:
 1. In your PLAN, say you will call `getProjects()` to list the projects.
 2. In your ACTION, call `getProjects()`.
 3. In your OUTPUT, return exactly one JSON object with:
