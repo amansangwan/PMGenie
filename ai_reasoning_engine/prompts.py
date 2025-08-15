@@ -1,6 +1,11 @@
+# import sys
+
+# print(sys.path)
+
 from jira_client.jira_fetcher import get_issues as get_jira_issues
 from jira_client.jira_fetcher import get_projects as get_jira_projects
 from utils import get_current_date
+
 
 TOOLS = {
     "getCurrentDate": {"func": get_current_date, "needs_input": False},
@@ -40,8 +45,6 @@ For Example -
 
 You also have access to prior memory logs provided as system messages prefixed with:
     "Previous memory: <text>"
-
-If no project name is provided, then you should call getProjects() and ask the user to choose from the project names. Then work with that selected project.
 
 Use these to improve your planning, tool selection, and summaries, especially if the memory contains context for this project or request.
 

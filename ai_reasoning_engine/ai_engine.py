@@ -1,43 +1,40 @@
+# ai_reasoning_engine/ai_engine.py
 import json
 import os
-import re
-import time
 import uuid
-import openai
 from dotenv import load_dotenv
-from .prompts import SYSTEM_PROMPT, TOOLS
-from .memory_manager import MemoryManager
-# from task_manager import get_task_prioritization, get_risk_analysis
-# from reports import generate_daily_standup_report
-
-# Load API key
+from openai import OpenAI
+from ai_reasoning_engine.prompts import SYSTEM_PROMPT, TOOLS
+from ai_reasoning_engine.memory_manager import MemoryManager
+# Load env once
 load_dotenv("creds.env")
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
-#create client
-client = openai.OpenAI()
-memory = MemoryManager()
+# Create client explicitly; do NOT rely on global openai.api_key
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+memory = MemoryManager()  # uses its own client internally (we’ll fix below)
 SESSION_ID = str(uuid.uuid4())
 CONTEXT = {"project_name": None, "pending_query": None}
 
-def extract_project_name(query):
-    system_prompt = "You are an assistant. Extract the project name from the user input. Return only the project name. For eg. 'summarize sathi project' then return 'sathi'. If not found, return 'unknown'."
+def extract_project_name(query: str) -> str:
+    system_prompt = (
+        "You are an assistant. Extract the project name from the user input. "
+        "Return only the project name. If not found, return 'unknown'."
+    )
     try:
-
-        response = client.chat.completions.create(
+        resp = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
+                {"role": "user", "content": query},
             ],
-            temperature=0
+            temperature=0,
         )
-
-        return response.choices[0].message.content.strip()
+        return (resp.choices[0].message.content or "unknown").strip()
     except Exception:
         return "unknown"
 
-def ai_reasoning_engine(user_query):
+def ai_reasoning_engine(user_query: str) -> str:
     """
     AI reasoning engine that follows START, PLAN, ACTION, OBSERVATION, and OUTPUT states dynamically.
     :param user_query: User's request (e.g., "Summarize Jira updates for Sarthi project")
@@ -45,7 +42,6 @@ def ai_reasoning_engine(user_query):
     """
     try:
         detected_project = extract_project_name(user_query)
-
         if detected_project.lower() != "unknown":
             CONTEXT["project_name"] = detected_project
 
@@ -65,65 +61,56 @@ def ai_reasoning_engine(user_query):
             messages.append({
                 "role": "system",
                 "content": f"Current project context: {project_name}"
-        })
+            })
 
-        # Inject past memories
+        # Context from memory
         memories = memory.query_memory(
-            query_text=user_query,
-            top_k=3,
-            project_name=project_name,
-            session_id=SESSION_ID
+            query_text=user_query, top_k=3,
+            project_name=project_name, session_id=SESSION_ID
         )
         if memories and memories[0]:
             for mem in memories[0]:
                 messages.append({"role": "system", "content": f"Past Memory: {mem}"})
 
-        # Finally the user message
-        q = {'type': 'user', 'user': user_query}
-        messages.append({"role": "user", "content": str(q)})
+        # User input
+        messages.append({"role": "user", "content": json.dumps({"type": "user", "user": user_query})})
 
-        while(True):
-        # Step 3: Get AI Plan (Determine required tool(s))
+        # Safety valve to avoid infinite loops
+        MAX_ITERS = 100
+
+        for _ in range(MAX_ITERS):
             plan_response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=messages,
-                response_format={"type":"json_object"},
-                temperature=0.2
+                response_format={"type": "json_object"},
+                temperature=0.2,
             )
             plan_text = plan_response.choices[0].message.content
             messages.append({'role': 'assistant', 'content': plan_text})
-            call = json.loads(plan_text)
-            # print("---------------",call)
-            if call['type'] == "output":
+            call = json.loads(plan_text or "{}")
+
+            if call.get('type') == "output":
                 memory.add_memory(
                     user_input=user_query,
-                    ai_response=call['output'],
+                    ai_response=call.get('output', ''),
                     project_name=project_name,
                     session_id=SESSION_ID,
-                    tags="jira_summary"
+                    tags="jira_summary",
                 )
+                return call.get('output', '')
 
-                return call['output']
-                # print('🤖', call['output'])
-                # break
-            elif call['type'] == "action":
-                # print(call)
-                fn = TOOLS[call['function']]['func']
-                # if 'input' in call and call['input'] != '':  # Only pass input if it's non-empty
-                #     observation = fn(call['input'])
-                # else:
-                #     # If no input is needed (like getProjects or getCurrentDate), just call the function
-                #     observation = fn()
-                if(TOOLS[call['function']]['needs_input']):
-
-                    observation = fn(call['input'])
-
+            if call.get('type') == "action":
+                fn_name = call.get('function')
+                fn = TOOLS[fn_name]['func']
+                if TOOLS[fn_name]['needs_input']:
+                    observation = fn(call.get('input'))
                 else:
                     observation = fn()
-                obs = {'type':'observation', "observation":observation}
-                messages.append({'role': 'developer', 'content': str(obs)})
+                obs = {'type': 'observation', 'observation': observation}
+                messages.append({'role': 'developer', 'content': json.dumps(obs)})
+                continue
 
-
+        return "I reached the maximum reasoning steps without a final output. Try refining the query."
 
     except Exception as e:
         return f"Error: {str(e)}"

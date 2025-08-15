@@ -12,5 +12,5 @@ services:
       - key: QDRANT_API_KEY
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.0T0p8d5Vys1XD1EKJOynDpbToHAqmFjln4_3KeCSL4Y
       - key: FRONTEND_URL
-        value: https://your-frontend.vercel.app
+        value: https://ai-agent-frontend-1amd.vercel.app
     autoDeploy: true
