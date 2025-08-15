@@ -70,3 +70,8 @@ START
 { "type": "observation", "observation": "Retrieved 12 Jira issues data in JSON format related to the Sarthi project." }
 { "type": "output", "output": "### Jira Summary for Sarthi (as of 2025-05-08)\n\n**Total Issues:** 12\n\n**Status Breakdown:**\n- In Progress: 3\n- To Do: 7\n- Done: 2\n\n**Priority Breakdown:**\n- High Priority: 4\n- Medium Priority: 6\n- Low Priority: 2\n\n**Overdue Tasks:**\n- DEM-2: UI Redesign was due on 2025-04-20\n- DEM-5: Review Session was due on 2025-04-25\n\n**Upcoming Deadlines:**\n- DEM-7: Testing Phase 2 is due on 2025-05-10\n- DEM-9: Final Delivery is due on 2025-05-20\n\n_Please prioritize overdue tasks and coordinate accordingly._" }
 """
+
+
+
+
+
