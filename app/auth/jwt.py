@@ -7,26 +7,44 @@ from fastapi import HTTPException, status
 from jose import JWTError
 
 load_dotenv("creds.env")
-SECRET = os.getenv("JWT_SECRET", "change_me")
-ALGO = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TTL = int(os.getenv("JWT_ACCESS_TTL_MIN", "60"))
-REFRESH_TTL = int(os.getenv("JWT_REFRESH_TTL_MIN", "10080"))
-
-def _encode(payload: dict, ttl_min: int) -> str:
-    to_encode = payload.copy()
-    to_encode.update({"exp": datetime.utcnow() + timedelta(minutes=ttl_min)})
-    return jwt.encode(to_encode, SECRET, algorithm=ALGO)
+SECRET_KEY = os.getenv("JWT_SECRET", "change_me")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TTL_MIN", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TTL_DAYS", "7"))
 
 def create_tokens(user_id: int):
-    access = _encode({"sub": str(user_id), "type": "access"}, ACCESS_TTL)
-    refresh = _encode({"sub": str(user_id), "type": "refresh"}, REFRESH_TTL)
-    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
+    access_exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_exp = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
-def verify_access_token(token: str) -> int:
+    access_token = jwt.encode(
+        {"sub": str(user_id), "exp": access_exp}, SECRET_KEY, algorithm=ALGORITHM
+    )
+    refresh_token = jwt.encode(
+        {"sub": str(user_id), "exp": refresh_exp, "type": "refresh"},
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
+
+
+def verify_access_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET, algorithms=[ALGO])
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return int(payload.get("sub"))
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        return None
+
+
+def verify_refresh_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            return None
+        return int(payload.get("sub"))
+    except JWTError:
+        return None

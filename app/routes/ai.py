@@ -1,108 +1,146 @@
-from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from datetime import datetime
 
 from app.routes.deps import get_current_user_id
 from app.db.session import get_db
 from app.models.chat import ChatMessage
 from app.models.file import File as FileModel
 from app.services.s3_service import upload_bytes
-from app.services.qdrant_service import upsert_points, search
-from app.services.ai_service import run_ai_message
 from app.services.file_service import save_file_and_process
+from app.services.ai_service import run_ai_message
+from app.services.chat_service import create_chat_session, update_session_metadata, get_chat_session
 
-from openai import OpenAI
-import os, uuid, time
+router = APIRouter(tags=["ai"])
 
-load_dotenv("creds.env")
-router = APIRouter()
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+# --------------- Pydantic requests ---------------
 class MessageRequest(BaseModel):
     query: str
     projectId: Optional[str] = None
     chatSessionId: Optional[str] = None
     attachment_ids: Optional[List[int]] = None
 
+class NewChatRequest(BaseModel):
+    projectId: Optional[str] = None
+    title: Optional[str] = None
+
+# --------------- helpers ---------------
+def _session_to_dict(s):
+    return {
+        "chatSessionId": s.id,
+        "userId": s.user_id,
+        "projectId": s.project_id,
+        "title": s.title,
+        "lastMessage": s.last_message,
+        "unreadCount": s.unread_count,
+        "created_at": s.created_at,
+        "updated_at": s.updated_at,
+    }
+
+def _message_to_dict(m: ChatMessage):
+    return {
+        "id": m.id,
+        "userId": m.user_id,
+        "projectId": m.project_id,
+        "chatSessionId": m.chat_session_id,
+        "role": m.role,
+        "content": m.content,
+        "created_at": m.created_at,
+    }
+
+# --------------- new chat endpoints ---------------
+@router.post("/new-chat", status_code=status.HTTP_201_CREATED)
+def new_chat_post(req: NewChatRequest, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    session = create_chat_session(db=db, user_id=user_id, project_id=req.projectId, title=req.title)
+    return _session_to_dict(session)
+
+@router.get("/new-chat")
+def new_chat_get(projectId: Optional[str] = None, title: Optional[str] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    session = create_chat_session(db=db, user_id=user_id, project_id=projectId, title=title)
+    return _session_to_dict(session)
+
+# --------------- send message (user -> assistant) ---------------
 @router.post("/messages")
 async def send_message(req: MessageRequest, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
-    # Persist user message
-    print("ouside run_ai_message")
+    """
+    1) Create session if not provided
+    2) Save user message in chat_messages
+    3) Update session metadata (title if empty, last_message, reset unread_count)
+    4) Run AI to generate assistant response
+    5) Save assistant response
+    6) Update session metadata (last_message, increment unread_count)
+    7) Return assistant answer and chatSessionId
+    """
+    # 1) ensure chat session exists
+    chat_session_id = req.chatSessionId
+    if not chat_session_id:
+        s = create_chat_session(db=db, user_id=user_id, project_id=req.projectId, title=None)
+        chat_session_id = s.id
 
+    # 2) persist user message
+    user_message = ChatMessage(
+        user_id=user_id,
+        project_id=req.projectId,
+        chat_session_id=chat_session_id,
+        role="user",
+        content=req.query,
+    )
+    db.add(user_message)
+    db.commit()
+    db.refresh(user_message)
 
-    # Optionally gather context docs from attachment_ids
+    # 3) update session metadata (set title if empty)
+    title_candidate = (req.query or "")[:80]
+    update_session_metadata(db=db, session_id=chat_session_id, message_text=req.query, is_assistant=False, set_title_if_empty=title_candidate)
+
+    # 4) gather context documents if provided
     context_docs: List[str] = []
     if req.attachment_ids:
         files = db.query(FileModel).filter(FileModel.id.in_(req.attachment_ids)).all()
         for f in files:
-            context_docs.append(f"[FILE:{f.filename}] available in KB/context")
+            # minimal reference; your agent can fetch file content via File.s3_key if needed
+            context_docs.append(f"[FILE:{f.filename}]")
 
-    # Call AI agent (existing logic if available)
-
-    print("ouside run_ai_message")
+    # 5) run AI agent (expects string answer); adapt if your ai_service returns structured response
     answer = await run_ai_message(req.query, context_docs)
 
-    # Persist assistant message
+    # 6) persist assistant message
+    assistant_message = ChatMessage(
+        user_id=user_id,
+        project_id=req.projectId,
+        chat_session_id=chat_session_id,
+        role="assistant",
+        content=answer,
+    )
+    db.add(assistant_message)
+    db.commit()
+    db.refresh(assistant_message)
 
+    # 7) update session metadata for assistant reply (increment unread)
+    update_session_metadata(db=db, session_id=chat_session_id, message_text=answer, is_assistant=True, increment_unread=True)
 
-    return {"message": answer}
+    return {"chatSessionId": chat_session_id, "answer": answer}
 
+# --------------- message history ---------------
 @router.get("/messages/history")
-def get_history(projectId: Optional[str] = None, chatSessionId: Optional[str] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+def messages_history(projectId: Optional[str] = None, chatSessionId: Optional[str] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     q = db.query(ChatMessage).filter(ChatMessage.user_id == user_id)
     if projectId:
         q = q.filter(ChatMessage.project_id == projectId)
     if chatSessionId:
         q = q.filter(ChatMessage.chat_session_id == chatSessionId)
     msgs = q.order_by(ChatMessage.created_at.asc()).all()
-    return [
-        {
-            "id": m.id,
-            "role": m.role,
-            "content": m.content,
-            "projectId": m.project_id,
-            "chatSessionId": m.chat_session_id,
-            "created_at": m.created_at.isoformat() if m.created_at else None,
-        }
-        for m in msgs
-    ]
+    return [_message_to_dict(m) for m in msgs]
 
-class SearchResponse(BaseModel):
-    id: str
-    score: float
-    payload: dict
-
-@router.get("/messages/search")
-def search_messages(q: str, projectId: Optional[str] = None, chatSessionId: Optional[str] = None):
-    # embed query
-    qemb = openai_client.embeddings.create(model="text-embedding-3-small", input=q).data[0].embedding
-    filters = {}
-    if projectId:
-        filters["projectId"] = projectId
-    if chatSessionId:
-        filters["chatSessionId"] = chatSessionId
-    results = search(qemb, limit=10, filters=filters)
-    out = []
-    for r in results:
-        out.append({"id": r.id, "score": r.score, "payload": r.payload})
-    return out
-
+# --------------- file upload (preserve existing behavior) ---------------
 @router.post("/context/upload")
-async def upload_context_file(
-    background: BackgroundTasks,
-    projectId: Optional[str] = None,
-    chatSessionId: Optional[str] = None,
-    file: UploadFile = File(...),
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db),
-):
-    data = await file.read()
-    key = f"uploads/{uuid.uuid4()}-{file.filename}"
+def upload_context_file(file: UploadFile = File(...), background: BackgroundTasks = None, projectId: Optional[str] = None, chatSessionId: Optional[str] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    data = file.file.read()
+    key = f"uploads/{__import__('uuid').uuid4()}-{file.filename}"
     upload_bytes(key, data, file.content_type or "application/octet-stream")
 
-    # persist metadata
     rec = FileModel(
         filename=file.filename,
         s3_key=key,
@@ -115,14 +153,15 @@ async def upload_context_file(
     db.commit()
     db.refresh(rec)
 
-    background.add_task(
-        save_file_and_process,
-        data,
-        file.filename,
-        projectId,
-        chatSessionId,
-        rec.id,
-        False
-    )
+    if background:
+        background.add_task(
+            save_file_and_process,
+            data,
+            file.filename,
+            projectId,
+            chatSessionId,
+            rec.id,
+            False
+        )
 
     return {"file_id": rec.id, "filename": rec.filename, "s3_key": rec.s3_key}

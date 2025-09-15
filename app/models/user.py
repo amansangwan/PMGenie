@@ -8,3 +8,10 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    #New fields
+
+    name = Column(String, nullable=True)
+    role = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+
