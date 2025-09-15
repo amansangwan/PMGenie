@@ -80,7 +80,7 @@ def get_me(user_id: int = Depends(get_current_user_id), db: Session = Depends(ge
 
 
 # ---------------- UPDATE PROFILE ----------------
-@router.patch("/update", response_model=UserResponse)
+@router.put("/update", response_model=UserResponse)
 def update_profile(req: UpdateUserRequest, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     user = db.query(User).get(user_id)
     if not user:

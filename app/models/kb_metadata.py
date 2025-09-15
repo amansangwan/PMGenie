@@ -14,4 +14,4 @@ class KBMetadata(Base):
     tags = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    file = relationship("File", backref="kb_metadata")
+    file = relationship("File", back_populates="kb_metadata")
