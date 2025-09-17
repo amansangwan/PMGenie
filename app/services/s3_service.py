@@ -14,7 +14,6 @@ _session = boto3.session.Session()
 s3 = _session.client(
     "s3",
     region_name=S3_REGION,
-    endpoint_url=S3_ENDPOINT_URL,
     aws_access_key_id=S3_ACCESS_KEY,
     aws_secret_access_key=S3_SECRET_KEY,
     config=Config(s3={"addressing_style": "path"}),

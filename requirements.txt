@@ -1,8 +1,4 @@
 python-dotenv
-jira
-sentence-transformers
-sentence-transformers==3.0.1
-transformers==4.41.2
 
 openai>=1.37.0
 httpx==0.27.2
