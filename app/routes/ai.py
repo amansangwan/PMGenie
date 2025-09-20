@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, status, Form
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
+import uuid
 
 from app.routes.deps import get_current_user_id
 from app.db.session import get_db
 from app.models.chat import ChatMessage
 from app.models.file import File as FileModel
-from app.services.s3_service import upload_bytes
-from app.services.file_service import save_file_and_process
+from app.services.s3_service import upload_fileobj
+from app.services.file_service import save_file_and_process_from_s3
 from app.services.ai_service import run_ai_message
 from app.services.chat_service import create_chat_session, update_session_metadata, get_chat_session
 
@@ -136,32 +137,42 @@ def messages_history(projectId: Optional[str] = None, chatSessionId: Optional[st
 
 # --------------- file upload (preserve existing behavior) ---------------
 @router.post("/context/upload")
-def upload_context_file(file: UploadFile = File(...), background: BackgroundTasks = None, projectId: Optional[str] = None, chatSessionId: Optional[str] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    data = file.file.read()
-    key = f"uploads/{__import__('uuid').uuid4()}-{file.filename}"
-    upload_bytes(key, data, file.content_type or "application/octet-stream")
+async def upload_context_file(
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    projectId: Optional[str] = Form(None),
+    chatSessionId: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
+    # Generate S3 key
+    key = f"uploads/{uuid.uuid4()}-{file.filename}"
 
+    # ✅ Stream upload to S3
+    upload_fileobj(key, file.file, content_type=file.content_type or "application/octet-stream")
+
+    # Save DB record
     rec = FileModel(
         filename=file.filename,
         s3_key=key,
         uploaded_by=user_id,
         project_id=projectId,
         chat_session_id=chatSessionId,
-        is_kb=False
+        is_kb=False,
     )
     db.add(rec)
     db.commit()
     db.refresh(rec)
 
-    if background:
-        background.add_task(
-            save_file_and_process,
-            data,
-            file.filename,
-            projectId,
-            chatSessionId,
-            rec.id,
-            False
-        )
+    # Schedule background processing (by S3 key only, not bytes)
+    background.add_task(
+        save_file_and_process_from_s3,
+        rec.s3_key,
+        rec.filename,
+        projectId,
+        chatSessionId,
+        rec.id,
+        False,
+    )
 
     return {"file_id": rec.id, "filename": rec.filename, "s3_key": rec.s3_key}

@@ -1,16 +1,15 @@
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, Query, Form
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import uuid, os
 from openai import OpenAI
-from fastapi import Form
 
 from app.routes.deps import get_current_user_id
 from app.db.session import get_db
 from app.models.file import File as FileModel
-from app.services.s3_service import upload_bytes
-from app.services.file_service import save_file_and_process
+from app.services.s3_service import upload_fileobj
+from app.services.file_service import save_file_and_process_from_s3
 from app.services import kb_service
 from app.schemas.kb import (
     KBProjectResponse,
@@ -55,10 +54,13 @@ async def kb_upload(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
-    data = await file.read()
+    # Create S3 key
     key = f"kb/{uuid.uuid4()}-{file.filename}"
-    upload_bytes(key, data, file.content_type or "application/octet-stream")
 
+    # ✅ Stream upload to S3 (no full read into memory)
+    upload_fileobj(key, file.file, content_type=file.content_type or "application/octet-stream")
+
+    # Save DB record
     rec = FileModel(
         filename=file.filename,
         s3_key=key,
@@ -71,10 +73,11 @@ async def kb_upload(
     db.commit()
     db.refresh(rec)
 
+    # Background task (S3 key only, not bytes)
     background.add_task(
-        save_file_and_process,
-        data,
-        file.filename,
+        save_file_and_process_from_s3,
+        rec.s3_key,
+        rec.filename,
         projectId,
         chatSessionId,
         rec.id,
