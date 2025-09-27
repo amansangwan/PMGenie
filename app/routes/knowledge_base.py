@@ -94,12 +94,12 @@ async def kb_upload(
     }
 
 
-# -----------------------
-# New: List KB Projects
-# -----------------------
-@router.get("/projects", response_model=List[KBProjectResponse])
-def list_projects(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    return kb_service.list_projects(db)
+# # -----------------------
+# # New: List KB Projects
+# # -----------------------
+# @router.get("/projects", response_model=List[KBProjectResponse])
+# def list_projects(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+#     return kb_service.list_projects(db)
 
 
 # -----------------------
@@ -117,22 +117,22 @@ def list_files_new(
 # -----------------------
 # New: Filter KB Files
 # -----------------------
-@router.get("/filter", response_model=List[KBFileResponse])
-def filter_files(
-    projectId: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
-    tag: Optional[str] = Query(None),
-    filename: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
-):
-    return kb_service.filter_files(
-        db=db,
-        project_id=projectId,
-        category=category,
-        tag=tag,
-        filename=filename,
-    )
+# @router.get("/filter", response_model=List[KBFileResponse])
+# def filter_files(
+#     projectId: Optional[str] = Query(None),
+#     category: Optional[str] = Query(None),
+#     tag: Optional[str] = Query(None),
+#     filename: Optional[str] = Query(None),
+#     db: Session = Depends(get_db),
+#     user_id: int = Depends(get_current_user_id),
+# ):
+#     return kb_service.filter_files(
+#         db=db,
+#         project_id=projectId,
+#         category=category,
+#         tag=tag,
+#         filename=filename,
+#     )
 
 
 # -----------------------
