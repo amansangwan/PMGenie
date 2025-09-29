@@ -5,6 +5,7 @@ from app.routes.auth import router as auth_router
 from app.routes.ai import router as ai_router
 from app.routes.knowledge_base import router as kb_router
 from app.routes.projects import router as projects_router
+from app.routes.chats import router as chats_router
 from app.db.session import init_db
 
 app = FastAPI(title="PMGenie API", version="1.0.0")
@@ -25,3 +26,4 @@ app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(ai_router, prefix="/ai", tags=["ai"])
 app.include_router(kb_router, prefix="/knowledge-base", tags=["knowledge-base"])
 app.include_router(projects_router, prefix="/projects", tags=["projects"])
+app.include_router(chats_router, prefix="/chats", tags=["chats"])

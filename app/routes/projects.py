@@ -17,7 +17,7 @@ from app.schemas.project import (
     ProjectDetailResponse,
 )
 
-router = APIRouter(prefix="/projects", tags=["projects"])
+router = APIRouter(tags=["projects"])
 
 
 # --------------------------
